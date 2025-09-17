@@ -1,19 +1,19 @@
-export type Question = {
-  id: string;
+export interface Question {
+  id: number;
   created_at: string;
-  category: string;
-  key_category?: string | null;
-  prompt: string;
-  options?: string[] | null;
+  question: string;
+  options: string[];
   answer: string;
-  explanation?: string | null;
-};
+  explanation: string;
+  category: string;
+  is_incorrect: boolean;
+}
 
-export type NewQuestion = {
-  category: string;
-  key_category?: string | null;
-  prompt: string;
-  options?: string[] | null;
-  answer: string;
-  explanation?: string | null;
-};
+export type NewQuestion = Omit<Question, 'id' | 'created_at' | 'is_incorrect'>;
+
+export enum View {
+  Dashboard = 'DASHBOARD',
+  Quiz = 'QUIZ',
+  Review = 'REVIEW',
+  Manage = 'MANAGE',
+}
