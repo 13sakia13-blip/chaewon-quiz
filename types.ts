@@ -1,19 +1,19 @@
-export interface Question {
-  id: number;
+export type Question = {
+  id: string;
   created_at: string;
-  question: string;
-  options: string[];
-  answer: string;
-  explanation: string;
   category: string;
-  is_incorrect: boolean;
-}
+  key_category?: string | null; // 보조 분류
+  prompt: string;
+  options?: string[] | null;
+  answer: string;
+  explanation?: string | null;
+};
 
-export type NewQuestion = Omit<Question, 'id' | 'created_at' | 'is_incorrect'>;
-
-export enum View {
-  Dashboard = 'DASHBOARD',
-  Quiz = 'QUIZ',
-  Review = 'REVIEW',
-  Manage = 'MANAGE',
-}
+export type NewQuestion = {
+  category: string;
+  key_category?: string | null;
+  prompt: string;
+  options?: string[] | null;
+  answer: string;
+  explanation?: string | null;
+};
