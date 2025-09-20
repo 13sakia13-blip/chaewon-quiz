@@ -161,6 +161,7 @@ const handleAddQuestions = async (newQuestions: NewQuestion[]) => {
                 }
                 if (quizQuestions.length === 0) {
                      return (
+ <>
     {/* EXAM ROUTES */}
     {examView === View.ExamSetup && (
         <ExamSetup
@@ -182,7 +183,8 @@ const handleAddQuestions = async (newQuestions: NewQuestion[]) => {
             onShowHistory={()=>setView(View.Review)}
         />
     )}
-    
+  </>
+                         
                         <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
                             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">
                                 {view === View.Review ? "풀어볼 오답 문제가 없습니다!" : "이 카테고리에 문제가 없습니다."}
