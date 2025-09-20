@@ -1,5 +1,0 @@
-{
-  "name": "Supabase Quiz App",
-  "description": "An interactive web application for practicing quizzes by uploading problems, answers, and explanations. It features category selection, incorrect answer tracking for review, and bulk question management, all powered by a Supabase backend.",
-  "requestFramePermissions": []
-}
