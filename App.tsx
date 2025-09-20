@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { type Question, type NewQuestion, View } from './types.ts';
+import { type Question, type NewQuestion, type ExamAnswer, type ExamResult, View } from './types.ts';
 import * as supabaseService from './services/supabaseService.ts';
 import { PlusIcon, TrashIcon, BookOpenIcon, CheckCircleIcon, XCircleIcon, LightBulbIcon, SparklesIcon } from './components/icons.tsx';
 
@@ -12,6 +12,32 @@ const App: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [quizCategory, setQuizCategory] = useState<string | null>(null);
+    // --- Exam Mode State ---
+    const [examView, setExamView] = useState<View>(View.Dashboard);
+    const [examCategory, setExamCategory] = useState<string | null>(null);
+    const [examQuestions, setExamQuestions] = useState<Question[]>([]);
+    const [examAnswers, setExamAnswers] = useState<ExamAnswer[]>([]);
+    const [examStartedAt, setExamStartedAt] = useState<string | null>(null);
+    const [examResult, setExamResult] = useState<ExamResult | null>(null);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [selectedHistory, setSelectedHistory] = useState<ExamResult | null>(null);
+
+    // LocalStorage helpers
+    const LS_HISTORY_KEY = 'examHistory';
+    const LS_WRONG_KEY = 'wrongNote';
+
+    function loadHistory(): ExamResult[] {
+        try { return JSON.parse(localStorage.getItem(LS_HISTORY_KEY) || '[]'); } catch { return []; }
+    }
+    function saveHistory(list: ExamResult[]) {
+        localStorage.setItem(LS_HISTORY_KEY, JSON.stringify(list));
+    }
+    function addWrongNote(ids: number[]) {
+        const prev = new Set<number>(JSON.parse(localStorage.getItem(LS_WRONG_KEY) || '[]'));
+        ids.forEach(id => prev.add(id));
+        localStorage.setItem(LS_WRONG_KEY, JSON.stringify(Array.from(prev)));
+    }
+
     
     const categories = useMemo(() => [...new Set(questions.map(q => q.category))].sort(), [questions]);
     const incorrectQuestions = useMemo(() => questions.filter(q => q.is_incorrect), [questions]);
@@ -50,7 +76,40 @@ const App: React.FC = () => {
         }
     };
 
-    const handleAddQuestions = async (newQuestions: NewQuestion[]) => {
+    
+    // ===== Exam Flow Handlers =====
+    const startExam = (category: string) => {
+        setExamCategory(category);
+        // sample 25 random questions (or all if fewer)
+        const pool = questions.filter(q => q.category === category);
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, Math.min(25, shuffled.length));
+        setExamQuestions(selected);
+        setExamAnswers(selected.map(q => ({questionId:q.id, selected:null, correct:false})));
+        const now = new Date().toISOString();
+        setExamStartedAt(now);
+        setExamView(View.Exam);
+    };
+
+    const finishExam = (answers: ExamAnswer[]) => {
+        const total = answers.length;
+        const correct = answers.filter(a => a.correct).length;
+        const wrongIds = answers.filter(a => !a.correct).map(a => a.questionId);
+        const result: ExamResult = {
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            at: examStartedAt || new Date().toISOString(),
+            category: examCategory || '전체',
+            total, correct, wrongIds
+        };
+        setExamResult(result);
+        // Save history & wrong notes
+        const hist = loadHistory();
+        hist.unshift(result);
+        saveHistory(hist);
+        addWrongNote(wrongIds);
+        setExamView(View.Results);
+    };
+const handleAddQuestions = async (newQuestions: NewQuestion[]) => {
         if (newQuestions.length === 0) return setIsUploadModalOpen(false);
         try {
             await supabaseService.addQuestions(newQuestions);
@@ -102,6 +161,28 @@ const App: React.FC = () => {
                 }
                 if (quizQuestions.length === 0) {
                      return (
+    {/* EXAM ROUTES */}
+    {examView === View.ExamSetup && (
+        <ExamSetup
+            categories={[...new Set(questions.map(q=>q.category))]}
+            onStart={startExam}
+            onCancel={()=>setExamView(View.Dashboard)}
+        />
+    )}
+    {examView === View.Exam && (
+        <ExamMode
+            questions={examQuestions}
+            onFinish={finishExam}
+        />
+    )}
+    {examView === View.Results && examResult && (
+        <ExamResults
+            result={examResult}
+            onClose={()=>setExamView(View.Dashboard)}
+            onShowHistory={()=>setView(View.Review)}
+        />
+    )}
+    
                         <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-lg shadow-md">
                             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">
                                 {view === View.Review ? "풀어볼 오답 문제가 없습니다!" : "이 카테고리에 문제가 없습니다."}
@@ -162,7 +243,11 @@ const Header: React.FC<{onNavigate: (view: View) => void; onOpenUpload: () => vo
                     </button>
                 </div>
             </div>
-        </header>
+          <div className="flex gap-2">
+      <button className="bg-indigo-600 px-3 py-2 rounded-lg" onClick={()=>setExamView(View.ExamSetup)}>시험보기</button>
+      <button className="bg-slate-700 px-3 py-2 rounded-lg" onClick={()=>setIsHistoryOpen(true)}>시험 결과</button>
+    </div>
+  </header>
     );
 };
 
@@ -500,4 +585,112 @@ const UploadModal: React.FC<{onClose: () => void; onAddQuestion: (q: NewQuestion
     );
 };
 
+
+
+// =================== Exam Components ===================
+const ExamSetup: React.FC<{ categories: string[]; onStart:(cat:string)=>void; onCancel:()=>void }> = ({ categories, onStart, onCancel }) => {
+    const [cat, setCat] = useState<string>(categories[0] || '');
+    return (
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-4">시험 보기</h2>
+            <label className="block text-sm mb-2">카테고리 선택</label>
+            <select className="w-full bg-slate-800 border border-slate-600 p-3 rounded-lg" value={cat} onChange={e=>setCat(e.target.value)}>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <div className="mt-6 flex gap-3 justify-end">
+                <button className="bg-slate-600 px-4 py-2 rounded-lg" onClick={onCancel}>취소</button>
+                <button className="bg-indigo-600 px-4 py-2 rounded-lg" onClick={()=>onStart(cat)} disabled={!cat}>시작</button>
+            </div>
+        </div>
+    );
+};
+
+const ExamMode: React.FC<{ questions: Question[]; onFinish:(answers:ExamAnswer[])=>void }> = ({ questions, onFinish }) => {
+    const [idx, setIdx] = useState(0);
+    const [answers, setAnswers] = useState<ExamAnswer[]>(() => questions.map(q => ({questionId:q.id, selected:null, correct:false})));
+    const q = questions[idx];
+    const select = (opt:string) => {
+        setAnswers(prev => {
+            const copy = [...prev];
+            copy[idx] = { questionId: q.id, selected: opt, correct: opt === q.answer };
+            return copy;
+        });
+    };
+    const next = () => { if (idx < questions.length-1) setIdx(idx+1); else onFinish(answers); };
+    const prev = () => { if (idx > 0) setIdx(idx-1); };
+    return (
+        <div className="p-4">
+            <div className="text-sm opacity-70 mb-2">문항 {idx+1} / {questions.length}</div>
+            <div className="text-lg font-semibold mb-4 whitespace-pre-wrap">{q.question}</div>
+            <div className="space-y-2">
+                {q.options.map(opt => (
+                    <button key={opt} onClick={()=>select(opt)} className={`w-full text-left border p-3 rounded-lg ${answers[idx].selected===opt ? 'border-indigo-400' : 'border-slate-700'}`}>
+                        {opt}
+                    </button>
+                ))}
+            </div>
+            <div className="mt-6 flex justify-between">
+                <button className="px-4 py-2 rounded-lg bg-slate-700" onClick={prev} disabled={idx===0}>이전</button>
+                <button className="px-4 py-2 rounded-lg bg-indigo-600" onClick={next}>{idx < questions.length-1 ? '다음' : '제출'}</button>
+            </div>
+        </div>
+    );
+};
+
+const ExamResults: React.FC<{ result: ExamResult; onClose:()=>void; onShowHistory:()=>void }> = ({ result, onClose, onShowHistory }) => {
+    return (
+        <div className="p-6">
+            <h2 className="text-2xl font-bold mb-2">시험 결과</h2>
+            <div className="text-slate-300 mb-4">{new Date(result.at).toLocaleString()}</div>
+            <div className="text-xl font-semibold mb-2">점수: {result.correct} / {result.total}</div>
+            <div className="mb-1">카테고리: {result.category}</div>
+            <div className="mb-6">오답 수: {result.wrongIds.length}</div>
+            <div className="flex gap-3 justify-end">
+                <button className="bg-slate-700 px-4 py-2 rounded-lg" onClick={onClose}>닫기</button>
+                <button className="bg-slate-600 px-4 py-2 rounded-lg" onClick={onShowHistory}>시험 기록 보기</button>
+            </div>
+        </div>
+    );
+};
+
+const ExamHistory: React.FC<{ history: ExamResult[]; allQuestions: Question[]; onClose:()=>void }> = ({ history, allQuestions, onClose }) => {
+    const [openId, setOpenId] = useState<string | null>(null);
+    const getWrong = (res: ExamResult) => res.wrongIds.map(id => allQuestions.find(q => q.id === id)).filter(Boolean) as Question[];
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-slate-900 w-[min(900px,95vw)] max-h-[85vh] overflow-auto rounded-xl border border-slate-700 p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xl font-bold">시험 기록</h3>
+                    <button className="px-3 py-1 rounded-lg bg-slate-700" onClick={onClose}>닫기</button>
+                </div>
+                <table className="w-full text-sm">
+                    <thead><tr className="text-left text-slate-400"><th className="py-2">일시</th><th>카테고리</th><th>점수</th><th>오답</th><th></th></tr></thead>
+                    <tbody>
+                        {history.map(h => (
+                            <tr key={h.id} className="border-t border-slate-800">
+                                <td className="py-2">{new Date(h.at).toLocaleString()}</td>
+                                <td>{h.category}</td>
+                                <td>{h.correct} / {h.total}</td>
+                                <td>{h.wrongIds.length}</td>
+                                <td><button className="text-indigo-300 underline" onClick={()=>setOpenId(openId===h.id?null:h.id)}>보기</button></td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {history.map(h => openId===h.id && (
+                    <div key={h.id} className="mt-4 p-3 rounded-lg border border-slate-700 bg-slate-800/40">
+                        <div className="font-semibold mb-2">오답 문제</div>
+                        {getWrong(h).length === 0 ? <div className="text-slate-300">오답이 없습니다.</div> : getWrong(h).map(q => (
+                            <div key={q.id} className="mb-3">
+                                <div className="font-medium">{q.question}</div>
+                                <div className="text-slate-300 text-sm mt-1"><b>정답:</b> {q.answer}</div>
+                                <div className="text-slate-400 text-sm mt-1"><b>해설:</b> {q.explanation}</div>
+                            </div>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 export default App;

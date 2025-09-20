@@ -16,4 +16,23 @@ export enum View {
   Quiz = 'QUIZ',
   Review = 'REVIEW',
   Manage = 'MANAGE',
+  ExamSetup = 'EXAM_SETUP',
+  Exam = 'EXAM',
+  Results = 'RESULTS',
 }
+
+export interface ExamAnswer {
+  questionId: number;
+  selected: string | null;
+  correct: boolean;
+}
+
+export interface ExamResult {
+  id: string;           // uuid
+  at: string;           // ISO timestamp
+  category: string;     // chosen category
+  total: number;        // total questions
+  correct: number;      // number correct
+  wrongIds: number[];   // ids of wrong questions
+}
+
